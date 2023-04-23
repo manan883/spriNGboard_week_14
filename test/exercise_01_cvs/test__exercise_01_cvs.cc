@@ -25,6 +25,11 @@ void produce (
 
   for (size_t idx=0; idx<num_to_produce; ++idx)
   {
+    {
+      lock_guard lg(cout_mutex);
+      cout << "P" << id << ": working..." << endl;
+    }
+
     this_thread::sleep_for(chrono::milliseconds(producer_delay_dist__msec(eng)));
     size_t msec = consumer_delay_dist__msec(eng);
 
@@ -55,16 +60,27 @@ void consume (
     {
       size_t msec = queue.front();
       queue.pop();
-      this_thread::sleep_for(chrono::milliseconds(msec));
       {
         lock_guard lg(cout_mutex);
         cout << "C" << id << ": popped " << msec << endl;
+        cout << "C" << id << ": working..." << endl;
       }
+      this_thread::sleep_for(chrono::milliseconds(msec));
       num_consumed++;
     }
-    else {
+    else
+    {
+      {
+        lock_guard lg(cout_mutex);
+        //cout << "C" << id << ": waiting..." << endl; // LINE A
+      }
       this_thread::sleep_for(chrono::milliseconds(10));
     }
+  }
+
+  {
+    lock_guard lg(cout_mutex);
+    cout << "C" << id << ": exiting..." << endl;
   }
 }
 
@@ -85,7 +101,7 @@ TEST_CASE("producer/consumer example")
   std::atomic_size_t N_consumed = 0;
   std::atomic_bool   done       = false;
 
-  cout << "starting consumers" << endl;
+  cout << "main: starting consumers" << endl;
   vector<thread> consumers;
   for (size_t idx=0; idx<N_consumers; ++idx)
   {
@@ -102,7 +118,7 @@ TEST_CASE("producer/consumer example")
     );
   }
 
-  cout << "starting producers" << endl;
+  cout << "main: starting producers" << endl;
   vector<thread> producers;
   for (size_t idx=0; idx<N_producers; ++idx)
   {
@@ -119,14 +135,14 @@ TEST_CASE("producer/consumer example")
     );
   }
 
-  cout << "joining producers" << endl;
+  cout << "main: joining producers" << endl;
   for (auto & t : producers) {
     t.join();
   }
 
   done = true;
 
-  cout << "joining consumers" << endl;
+  cout << "main: joining consumers" << endl;
   for (auto & t : consumers) {
     t.join();
   }
