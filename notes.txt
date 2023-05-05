@@ -1,0 +1,5 @@
+When line A is uncommented the program uses more resources by printing the waiting line over and over because its checking for the queue to not be empty
+the test is failing because the consumer method is not getting called every time and since it only pops once it can lead to inaccuracy 
+to solve this you need to lock the queue and call the consumer method right after a producer is done. 
+we also need to change the while loop so that !done is with || queue.isEmpty().
+that should fix the errors

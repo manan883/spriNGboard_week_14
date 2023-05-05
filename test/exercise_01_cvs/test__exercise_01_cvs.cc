@@ -20,8 +20,8 @@ void produce (
   std::atomic_size_t & num_produced)
 {
   mt19937_64 eng{random_device{}()};
-  uniform_int_distribution<> producer_delay_dist__msec{100,1000};
-  uniform_int_distribution<> consumer_delay_dist__msec{500,5000};
+  uniform_int_distribution<> producer_delay_dist__msec{1,10};
+  uniform_int_distribution<> consumer_delay_dist__msec{5,50};
 
   for (size_t idx=0; idx<num_to_produce; ++idx)
   {
@@ -37,10 +37,12 @@ void produce (
       lock_guard lg(cout_mutex);
       cout << "P" << id << ": pushing " << msec << endl;
     }
-
+    {
+    std::unique_lock<std::mutex> uq(queue_mutex);
     queue.push(msec);
-
-    num_produced++;
+    uq.unlock();
+    num_produced++; 
+    }
   }
 }
 
@@ -54,12 +56,20 @@ void consume (
   std::atomic_bool   & done,
   std::atomic_size_t & num_consumed)
 {
-  while (!done)
+  bool qMty = false;
+  while (!done || qMty == false)
   {
-    if (!queue.empty())
+    if (qMty == false)
     {
-      size_t msec = queue.front();
+      size_t msec;
+      {
+      std::unique_lock<std::mutex> uq(queue_mutex);
+      msec = queue.front();
       queue.pop();
+      qMty = queue.empty();
+      uq.unlock();
+
+      }
       {
         lock_guard lg(cout_mutex);
         cout << "C" << id << ": popped " << msec << endl;
@@ -71,8 +81,8 @@ void consume (
     else
     {
       {
-        lock_guard lg(cout_mutex);
-        //cout << "C" << id << ": waiting..." << endl; // LINE A
+       // lock_guard lg(cout_mutex);
+       // cout << "C" << id << ": waiting..." << endl; // LINE A
       }
       this_thread::sleep_for(chrono::milliseconds(10));
     }
@@ -101,22 +111,7 @@ TEST_CASE("producer/consumer example")
   std::atomic_size_t N_consumed = 0;
   std::atomic_bool   done       = false;
 
-  cout << "main: starting consumers" << endl;
-  vector<thread> consumers;
-  for (size_t idx=0; idx<N_consumers; ++idx)
-  {
-    consumers.emplace_back(
-      consume,
-      idx,
-      ref(cout_m),
-      ref(producer_m),
-      ref(consumer_m),
-      ref(q),
-      ref(q_m),
-      ref(done),
-      ref(N_consumed)
-    );
-  }
+
 
   cout << "main: starting producers" << endl;
   vector<thread> producers;
@@ -134,7 +129,22 @@ TEST_CASE("producer/consumer example")
       ref(N_produced)
     );
   }
-
+  cout << "main: starting consumers" << endl;
+  vector<thread> consumers;
+  for (size_t idx=0; idx<N_consumers; ++idx)
+  {
+    consumers.emplace_back(
+      consume,
+      idx,
+      ref(cout_m),
+      ref(producer_m),
+      ref(consumer_m),
+      ref(q),
+      ref(q_m),
+      ref(done),
+      ref(N_consumed)
+    );
+  }
   cout << "main: joining producers" << endl;
   for (auto & t : producers) {
     t.join();
